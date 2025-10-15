@@ -1,0 +1,39 @@
+{
+  "name": "rocket-alert-monitor",
+  "version": "1.0.0",
+  "description": "A monitoring service that alerts users about potential rocket attacks in their area.",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "pm2:install": "pm2 start npm --name \"rocket-alert-monitor\" -- start && pm2 save",
+    "pm2:restart": "pm2 restart rocket-alert-monitor",
+    "pm2:stop": "pm2 stop rocket-alert-monitor",
+    "pm2:logs": "pm2 logs rocket-alert-monitor --lines 100",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^1.3.24",
+    "@inquirer/prompts": "^7.5.0",
+    "ai": "^4.3.19",
+    "dotenv": "^16.0.0",
+    "grammy": "^1.38.2",
+    "telegram": "^2.26.22",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.16",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.3"
+  },
+  "keywords": [
+    "rocket",
+    "alert",
+    "monitor",
+    "telegram",
+    "safety"
+  ],
+  "author": "resonaura",
+  "license": "MIT"
+}

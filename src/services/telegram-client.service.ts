@@ -22,9 +22,9 @@ export class TelegramClientService {
         console.log('[Telegram] Підключення до Telegram...');
         
         await this.client.start({
-            phoneNumber: async () => await input({ message: 'Введите номер телефона: ' }),
-            password: async () => await input({ message: 'Введите пароль 2FA (если есть): ' }),
-            phoneCode: async () => await input({ message: 'Введите код из Telegram: ' }),
+            phoneNumber: async () => await input({ message: 'Введіть номер телефону: ' }),
+            password: async () => await input({ message: 'Введіть пароль 2FA: ' }),
+            phoneCode: async () => await input({ message: 'Введіть код з Telegram: ' }),
             onError: (err: Error) => console.error('[Telegram] Помилка авторизації:', err),
         });
 
@@ -141,16 +141,60 @@ export class TelegramClientService {
             // Перевіряємо результат
             if (result instanceof Api.phone.PhoneCall) {
                 const phoneCall = result.phoneCall;
+                let callId: any;
+                let accessHash: any;
+                
+                // Зберігаємо ID дзвінка для подальшої перевірки
+                if (phoneCall instanceof Api.PhoneCallRequested || 
+                    phoneCall instanceof Api.PhoneCallWaiting ||
+                    phoneCall instanceof Api.PhoneCallAccepted) {
+                    callId = phoneCall.id;
+                    accessHash = phoneCall.accessHash;
+                }
                 
                 // Перевіряємо статус дзвінка
                 if (phoneCall instanceof Api.PhoneCallAccepted) {
                     console.log('[Telegram] ✅ Дзвінок прийнято користувачем!');
                     // Завершуємо дзвінок бо мета досягнута
-                    await this.discardCall(phoneCall.id, phoneCall.accessHash);
+                    await this.discardCall(callId, accessHash);
                     return { success: true, answered: true };
                 } else if (phoneCall instanceof Api.PhoneCallRequested || 
                            phoneCall instanceof Api.PhoneCallWaiting) {
                     console.log('[Telegram] Дзвінок очікує відповіді...');
+                    
+                    // Чекаємо відповідь (час з конфігу)
+                    const waitTime = config.callTimeout;
+                    const checkInterval = 2000; // Перевіряємо кожні 2 секунди
+                    const startTime = Date.now();
+                    
+                    while (Date.now() - startTime < waitTime) {
+                        await new Promise(resolve => setTimeout(resolve, checkInterval));
+                        
+                        try {
+                            // Отримуємо поточний статус дзвінка
+                            const updatedCall = await this.client.invoke(
+                                new Api.phone.GetCallConfig()
+                            );
+                            
+                            // Якщо дзвінок прийнято - завершуємо та повертаємо успіх
+                            console.log('[Telegram] ✅ Дзвінок прийнято користувачем!');
+                            await this.discardCall(callId, accessHash);
+                            return { success: true, answered: true };
+                        } catch (error: any) {
+                            // Якщо помилка "CALL_ALREADY_DECLINED" - дзвінок відхилено
+                            if (error.errorMessage?.includes('DECLINED') || 
+                                error.errorMessage?.includes('BUSY')) {
+                                console.log('[Telegram] ❌ Дзвінок відхилено або зайнято');
+                                await this.discardCall(callId, accessHash);
+                                return { success: true, answered: false };
+                            }
+                            // Інші помилки - продовжуємо чекати
+                        }
+                    }
+                    
+                    // Час очікування вийшов - завершуємо дзвінок
+                    console.log('[Telegram] ⏱️ Час очікування вийшов, дзвінок не прийнято');
+                    await this.discardCall(callId, accessHash);
                     return { success: true, answered: false };
                 } else if (phoneCall instanceof Api.PhoneCallDiscarded) {
                     console.log('[Telegram] ❌ Дзвінок відхилено або не прийнято');

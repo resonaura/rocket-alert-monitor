@@ -5,6 +5,7 @@ import { LogLevel } from 'telegram/extensions/Logger';
 import { input } from '@inquirer/prompts';
 import { config } from '../config/settings';
 import { Storage } from '../utils/storage';
+import * as crypto from 'crypto';
 
 export class TelegramClientService {
     private client: TelegramClient;
@@ -114,11 +115,12 @@ export class TelegramClientService {
             
             const userEntity = await this.client.getEntity(userId);
             
-            // Генеруємо випадковий ID для дзвінка
-            const randomId = Math.floor(Math.random() * 0xFFFFFFFF);
+            // Генеруємо випадковий ID для дзвінка (в межах signed int32)
+            const randomId = Math.floor(Math.random() * 0x7FFFFFFF);
             
-            // Створюємо мінімальний g_a hash (вимога Telegram API)
-            const gAHash = Buffer.alloc(256);
+            // Створюємо g_a hash (SHA-256 від випадкових даних)
+            const gA = crypto.randomBytes(256);
+            const gAHash = crypto.createHash('sha256').update(gA).digest();
             
             // Використовуємо requestCall для дзвінка
             const result = await this.client.invoke(
@@ -162,40 +164,54 @@ export class TelegramClientService {
                            phoneCall instanceof Api.PhoneCallWaiting) {
                     console.log('[Telegram] Дзвінок очікує відповіді...');
                     
-                    // Чекаємо відповідь (час з конфігу)
                     const waitTime = config.callTimeout;
-                    const checkInterval = 2000; // Перевіряємо кожні 2 секунди
-                    const startTime = Date.now();
+                    console.log(`[Telegram] Очікуємо ${waitTime / 1000} секунд...`);
                     
-                    while (Date.now() - startTime < waitTime) {
-                        await new Promise(resolve => setTimeout(resolve, checkInterval));
-                        
-                        try {
-                            // Отримуємо поточний статус дзвінка
-                            const updatedCall = await this.client.invoke(
-                                new Api.phone.GetCallConfig()
-                            );
+                    // Чекаємо на оновлення статусу дзвінка через updates
+                    let callAnswered = false;
+                    let callDiscarded = false;
+                    
+                    const updateHandler = (update: any) => {
+                        if (update instanceof Api.UpdatePhoneCall) {
+                            const phoneCall = update.phoneCall;
                             
-                            // Якщо дзвінок прийнято - завершуємо та повертаємо успіх
-                            console.log('[Telegram] ✅ Дзвінок прийнято користувачем!');
-                            await this.discardCall(callId, accessHash);
-                            return { success: true, answered: true };
-                        } catch (error: any) {
-                            // Якщо помилка "CALL_ALREADY_DECLINED" - дзвінок відхилено
-                            if (error.errorMessage?.includes('DECLINED') || 
-                                error.errorMessage?.includes('BUSY')) {
-                                console.log('[Telegram] ❌ Дзвінок відхилено або зайнято');
-                                await this.discardCall(callId, accessHash);
-                                return { success: true, answered: false };
+                            if (phoneCall.id?.equals(callId)) {
+                                if (phoneCall instanceof Api.PhoneCallAccepted) {
+                                    console.log('[Telegram] 📞 Дзвінок прийнято!');
+                                    callAnswered = true;
+                                } else if (phoneCall instanceof Api.PhoneCallDiscarded) {
+                                    console.log('[Telegram] 📵 Дзвінок завершено/відхилено');
+                                    callDiscarded = true;
+                                }
                             }
-                            // Інші помилки - продовжуємо чекати
                         }
+                    };
+                    
+                    // Підписуємося на оновлення
+                    this.client.addEventHandler(updateHandler);
+                    
+                    // Чекаємо з періодичною перевіркою статусу
+                    const startTime = Date.now();
+                    while (Date.now() - startTime < waitTime && !callAnswered && !callDiscarded) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
                     
-                    // Час очікування вийшов - завершуємо дзвінок
-                    console.log('[Telegram] ⏱️ Час очікування вийшов, дзвінок не прийнято');
-                    await this.discardCall(callId, accessHash);
-                    return { success: true, answered: false };
+                    const timeElapsed = Date.now() - startTime;
+                    
+                    // Завершуємо дзвінок якщо він ще активний
+                    if (!callDiscarded) {
+                        console.log('[Telegram] Завершуємо дзвінок...');
+                        await this.discardCall(callId, accessHash);
+                    }
+                    
+                    // Якщо дзвінок завершився раніше таймауту - користувач відповів/прокинувся
+                    if (callAnswered || (callDiscarded && timeElapsed < waitTime)) {
+                        console.log('[Telegram] ✅ Користувач відповів на дзвінок (прокинувся)!');
+                        return { success: true, answered: true };
+                    } else {
+                        console.log('[Telegram] ❌ Користувач не відповів');
+                        return { success: true, answered: false };
+                    }
                 } else if (phoneCall instanceof Api.PhoneCallDiscarded) {
                     console.log('[Telegram] ❌ Дзвінок відхилено або не прийнято');
                     return { success: true, answered: false };

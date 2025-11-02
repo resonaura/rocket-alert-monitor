@@ -16,8 +16,8 @@ export const config = {
     // City to monitor
     monitoredCity: process.env.MONITORED_CITY || 'Дніпро',
 
-    // OpenAI API key for AI analysis
-    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    // OpenRouter API key for AI analysis
+    openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
 
     // Keywords to search for (legacy, now using AI)
     keywords: (process.env.KEYWORDS || 'тривога,ракета,повітряна,Дніпро,Днепр,Днипро')
@@ -43,12 +43,12 @@ export function validateConfig(): void {
     if (!config.callUserId || config.callUserId === 0) {
         throw new Error('CALL_USER_ID не встановлено в .env файлі');
     }
-    if (!config.openaiApiKey) {
-        console.warn('[Config] ⚠️  OPENAI_API_KEY не встановлено - AI аналіз вимкнено, використовується простий пошук');
+    if (!config.openRouterApiKey) {
+        console.warn('[Config] ⚠️  OPENROUTER_API_KEY не встановлено - AI аналіз вимкнено, використовується простий пошук');
     }
     console.log('[Config] Конфігурацію успішно завантажено');
     console.log(`[Config] Моніторинг каналу: ${config.channelId}`);
     console.log(`[Config] Місто: ${config.monitoredCity}`);
-    console.log(`[Config] AI аналіз: ${config.openaiApiKey ? '✅ Увімкнено' : '❌ Вимкнено'}`);
+    console.log(`[Config] AI аналіз: ${config.openRouterApiKey ? '✅ Увімкнено' : '❌ Вимкнено'}`);
     console.log(`[Config] Дзвінки користувачу: ${config.callUserId}`);
 }
